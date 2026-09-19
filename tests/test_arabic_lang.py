@@ -1,6 +1,7 @@
 import io
 import os
 import sys
+import tempfile
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -16,6 +17,23 @@ def شغّل(المصدر, مدخلات=None):
         مدخل=lambda: next(مصدر_المدخلات),
         مخرج=lambda س: مخرجات.append(str(س)),
     )
+    return مخرجات
+
+
+def شغّل_مع_ملفات(الملفات, الرئيسي):
+    """ينشئ ملفات مؤقتة (اسم -> محتوى) ويشغّل الملف الرئيسي بينها."""
+    مخرجات = []
+    with tempfile.TemporaryDirectory() as مجلد:
+        for مسار_نسبي, محتوى in الملفات.items():
+            مسار_كامل = os.path.join(مجلد, مسار_نسبي)
+            os.makedirs(os.path.dirname(مسار_كامل), exist_ok=True)
+            with open(مسار_كامل, "w", encoding="utf-8") as ملف:
+                ملف.write(محتوى)
+        شغّل_نص(
+            الملفات[الرئيسي],
+            مخرج=lambda س: مخرجات.append(str(س)),
+            مجلد_القاعدة=مجلد,
+        )
     return مخرجات
 
 
@@ -361,6 +379,59 @@ class اختبارات_أساسية(unittest.TestCase):
         self.assertEqual(
             شغّل(برنامج), ["[1، 2، 5، 9]", "[1، 9، 2، 5]", "ابحرم"]
         )
+
+    def test_استيراد_وحدة_من_مجلدات_متداخلة(self):
+        مخرجات = شغّل_مع_ملفات(
+            {
+                "c/newfolde/lang/رياضيات.arabic": (
+                    "دالة تربيع معطيات س\nبداية\nارجع س في س\nنهاية\n"
+                    "اجعل عام باي يساوي 3.14\n"
+                ),
+                "رئيسي.arabic": (
+                    "استورد رياضيات من c من newfolde من lang\n"
+                    "اطبع قيمة نداء تربيع 5\n"
+                    "اطبع قيمة باي\n"
+                ),
+            },
+            "رئيسي.arabic",
+        )
+        self.assertEqual(مخرجات, ["25", "3.14"])
+
+    def test_استيراد_وحدة_غير_موجودة(self):
+        with self.assertRaises(خطأ_لغوي):
+            شغّل_مع_ملفات(
+                {"رئيسي.arabic": "استورد غيرموجود من مجلد\n"}, "رئيسي.arabic"
+            )
+
+    def test_استيراد_تعارض_اسماء_الدوال(self):
+        with self.assertRaises(خطأ_لغوي):
+            شغّل_مع_ملفات(
+                {
+                    "وحدة.arabic": "دالة جمع معطيات س ص\nبداية\nارجع س زائد ص\nنهاية\n",
+                    "رئيسي.arabic": (
+                        "دالة جمع معطيات س ص\nبداية\nارجع س زائد ص\nنهاية\n"
+                        "استورد وحدة\n"
+                    ),
+                },
+                "رئيسي.arabic",
+            )
+
+    def test_استيراد_مزدوج_لا_يسبب_خطأ(self):
+        مخرجات = شغّل_مع_ملفات(
+            {
+                "مشترك.arabic": "دالة ضعف معطيات س\nبداية\nارجع س في 2\nنهاية\n",
+                "وسيط.arabic": "استورد مشترك\n",
+                "رئيسي.arabic": (
+                    "استورد مشترك\nاستورد وسيط\nاطبع قيمة نداء ضعف 10\n"
+                ),
+            },
+            "رئيسي.arabic",
+        )
+        self.assertEqual(مخرجات, ["20"])
+
+    def test_رمز_لاتيني_مرفوض_خارج_الاستيراد(self):
+        with self.assertRaises(خطأ_لغوي):
+            شغّل("اطبع قيمة newfolder")
 
 
 if __name__ == "__main__":
